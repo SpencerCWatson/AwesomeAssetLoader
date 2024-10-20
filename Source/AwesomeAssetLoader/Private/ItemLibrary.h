@@ -5,11 +5,14 @@
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "GameplayTagContainer.h"
+#include "Engine/StreamableManager.h"
 #include "ItemLibrary.generated.h"
+
+DECLARE_DELEGATE_OneParam(FOnStatusChange, const bool /*ShouldLoad*/);
 
 /** Describes the primary asset to load and the required bundles */
 USTRUCT(BlueprintType)
-struct FPrimaryAssetLoadRequest
+struct FAssetLoadRequest
 {
 	GENERATED_BODY()
 
@@ -18,30 +21,42 @@ struct FPrimaryAssetLoadRequest
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TArray<FName> PrimaryAssetBundles;
+
+	FORCEINLINE friend uint32 GetTypeHash(const FAssetLoadRequest& Key)
+	{
+		return HashCombine(GetTypeHash(Key.PrimaryAssetId), GetTypeHash(Key.PrimaryAssetBundles));
+	}
 };
 
-/** Describes each item to be tracked and have it's dependencies loaded. */
+/** Describes each item to be tracked and have its dependencies loaded. */
 USTRUCT(BlueprintType)
 struct FAwesomeAssetData
 {
 	GENERATED_BODY()
 
+	/** Unique identifier for this asset. Can leave blank if assets are just referenced by list index. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName UniqueId;
-	
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TArray<FPrimaryAssetLoadRequest> FPrimaryAssetLoadRequests;
 
-	// Tags that describe this asset for filtering and number values for sorting.
+	/** List of assets to load*/
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<TSoftObjectPtr<UObject>> AssetsToLoad;
+	
+	/** List of primary assets to load */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TArray<FAssetLoadRequest> PrimaryAssetLoadRequests;
+
+	/** Tags that describe this asset for filtering and number values for sorting. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TMap<FGameplayTag, float> AssetDescriptions;
-};
 
-UENUM(BlueprintType)
-enum class EBufferType : uint8
-{
-	Page,
-	Range
+	/** Delegate handles to call when the load status of this changes */
+	FOnStatusChange OnStatusChange;
+
+	/** Handle to keep the assets alive that this asset depends on */
+	TSharedPtr<FStreamableHandle> LoadHandle;
+
+	
 };
 
 UCLASS()
@@ -49,45 +64,39 @@ class AWESOMEASSETLOADER_API UItemLibrary : public UObject
 {
 	GENERATED_BODY()
 
-	UItemLibrary(){};
-
 public:
 
 	/** Sets up initial variables */
-	void Initialize(FName NewLibraryName, const TArray<FAwesomeAssetData>& NewAssets);
-
+	void Initialize(TArray<FAwesomeAssetData>&& NewAssets);
 
 private:
+
+	void Update();
 	
 	friend class UAwesomeAssetManager;
+
+	/** All items belonging to this library */
+	TArray<TSharedPtr<FAwesomeAssetData>> Items;
+
+	/** Library items that are part of the last set filter */
+	TArray<TSharedPtr<FAwesomeAssetData>> FilteredAssets;
+
+	/** The sorted filtered items */
+	TArray<TSharedPtr<FAwesomeAssetData>> SortedAssets;
+
 	
-	FName LibraryName;
-	TArray<FAwesomeAssetData> Items;
+	//~~~~ For the buffer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-	EBufferType BufferType;
-
-	// This is left and right buffer amount if type is range or the amount of pages to load beside the target one.
-	int32 BufferSize;
-
-	// Size of a buffer page.
-	int32 BufferPageSize;
 	
-	TArray<FAwesomeAssetData*> FilteredAssets;
+	TSet<TSharedPtr<FAwesomeAssetData>> RequestedAssets;
 
-	TArray<FAwesomeAssetData*> SortedAssets;
+	/** Number of assets above and bellow the target range to load. this is a default priority load */
+	int32 BufferSize = 0;
 
-	/** Same items as SortedAssets just in Id form. */
-	TArray<FName> SortedAssetIds;
+	/* The target range to load around. This is a high priority load */
+	int32 TargetStart = 0;
+	int32 TargetEnd = 0;
 
-
-	//~~~~~~~~~~~~~~~~~~~~~~~~
-	//~~~~ For the buffer ~~~~
-	//~~~~~~~~~~~~~~~~~~~~~~~~
-
-	TArray<FName> CurrentLoadedIds;
-	
-	// The target item load around.
-	FName BufferItemTarget;
-	// The target page that we want to load. Zero based
-	int32 BufferPageTarget;
+	/** Returns all the assets that should be loaded */
+	void GetRequestedAssets(TSet<TSharedPtr<FAwesomeAssetData>>& HighPriority, TSet<TSharedPtr<FAwesomeAssetData>>& DefaultPriority);
 };

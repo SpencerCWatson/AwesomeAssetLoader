@@ -3,171 +3,135 @@
 
 #include "AwesomeAssetManager.h"
 
-#include "Engine/AssetManager.h"
-
 void UAwesomeAssetManager::Initialize(FSubsystemCollectionBase& Collection)
 {
 	Super::Initialize(Collection);
-	AssetManager = UAssetManager::GetIfValid();
 }
 
-bool UAwesomeAssetManager::AddAssetLibrary(FName LibraryName, const TArray<FAwesomeAssetData>& Assets)
+bool UAwesomeAssetManager::AddAssetLibrary(const FName& LibraryName, TArray<FAwesomeAssetData> Assets)
 {
-	if(LibraryName != NAME_None && !Assets.IsEmpty())
+	if (!LibraryName.IsNone() && !Assets.IsEmpty())
 	{
 		UItemLibrary* NewLibrary = NewObject<UItemLibrary>(this);
-		NewLibrary->Initialize(LibraryName, Assets);
+		NewLibrary->Initialize(MoveTemp(Assets));
 		Libraries.Emplace(LibraryName, NewLibrary);
 		return true;
 	}
 	return false;
 }
 
-void UAwesomeAssetManager::FilterAssets(FName LibraryName, const FGameplayTagContainer& Filter)
+void UAwesomeAssetManager::FilterAssets(const FName& LibraryName, const FGameplayTagContainer& Filter)
 {
-	if(UItemLibrary* Library =  GetAssetLibrary(LibraryName))
+	if (UItemLibrary* Library = GetLibrary(LibraryName))
 	{
-		Library->FilteredAssets.Empty();
-		for(FAwesomeAssetData Asset : Library->Items)
+		Library->FilteredAssets.Reset();
+		for (const auto& Item : Library->Items)
 		{
 			TArray<FGameplayTag> TagsAsArray;
-			Asset.AssetDescriptions.GetKeys(TagsAsArray);
-			FGameplayTagContainer TagContainer = FGameplayTagContainer::CreateFromArray(TagsAsArray);
-			if(TagContainer.HasAll(Filter))
+			Item->AssetDescriptions.GetKeys(TagsAsArray);
+			const FGameplayTagContainer ItemTagContainer = FGameplayTagContainer::CreateFromArray(TagsAsArray);
+			if (ItemTagContainer.HasAll(Filter))
 			{
-				Library->FilteredAssets.Emplace(&Asset);
+				Library->FilteredAssets.Emplace(Item);
 			}
 		}
 	}
 }
 
-void UAwesomeAssetManager::SortAssets(FName LibraryName, const TArray<FGameplayTag>& Order, bool bSortValueAscending)
+void UAwesomeAssetManager::SortAssets(const FName& LibraryName, const TArray<FGameplayTag>& Order, const bool bSortValuesDescending)
 {
-	if(UItemLibrary* Library =  GetAssetLibrary(LibraryName))
+	UItemLibrary* Library = GetLibrary(LibraryName);
+	
+	if (!Library)
 	{
-		Library->SortedAssets.Empty();
-		// Organize and sort the asset data by each tag before combining. TODO add size to make more efficient.
-		TArray<TArray<FAwesomeAssetData*>> SortBuckets;
+		return;
+	}
+	
+	// Organize and sort the asset data by each tag before combining. 
+	Library->SortedAssets.Reset(Library->FilteredAssets.Num());
+	TArray<TArray<TSharedPtr<FAwesomeAssetData>>> SortBuckets;
+	SortBuckets.Init(TArray<TSharedPtr<FAwesomeAssetData>>(), Order.Num());
+	
+	for (const auto& Item : Library->Items)
+	{
+		for (int32 i = 0; i < Order.Num(); ++i)
+		{
+			// If current asset contains current tag.
+			if (Item->AssetDescriptions.Contains(Order[i]))
+			{
+				SortBuckets[i].Emplace(Item);
+				break;
+			}
+		}
+	}
+	
+	// Sort by values in buckets.
+	for (int32 i = 0; i < SortBuckets.Num(); ++i)
+	{
+		const FGameplayTag SortTag = Order[i];
+
+		if (bSortValuesDescending)
+		{
+			SortBuckets[i].Sort([SortTag](const TSharedPtr<FAwesomeAssetData>& A, const TSharedPtr<FAwesomeAssetData>& B)
+			{
+				return A->AssetDescriptions.FindChecked(SortTag) > B->AssetDescriptions.FindChecked(SortTag);
+			});
+		}
+		else
+		{
+			SortBuckets[i].Sort([SortTag](const TSharedPtr<FAwesomeAssetData>& A, const TSharedPtr<FAwesomeAssetData>& B)
+			{
+				return A->AssetDescriptions.FindChecked(SortTag) < B->AssetDescriptions.FindChecked(SortTag);
+			});
+		}
 		
-		for(int32 i = 0; i < Library->Items.Num(); ++i)
-		{
-			for(int32 j = 0; j < Order.Num(); ++j)
-			{
-				// If current asset contains current tag.
-				if(Library->Items[i].AssetDescriptions.Contains(Order[j]))
-				{
-					SortBuckets[j].Emplace(&Library->Items[i]);
-					break;
-				}
-			}
-		}
-		// Sort by value in buckets.
-		for(int32 i = 0; i < SortBuckets.Num(); ++i)
-		{
-			TMap<float,TArray<FAwesomeAssetData*>> SortingMap;
-			for(FAwesomeAssetData* AssetData : SortBuckets[i])
-			{
-				if(TArray<FAwesomeAssetData*>* ValueArray = SortingMap.Find(*AssetData->AssetDescriptions.Find(Order[i])))
-				{
-					ValueArray->Emplace(AssetData);
-				}
-				else
-				{
-					TArray<FAwesomeAssetData*> TempArray;
-					TempArray.Emplace(AssetData);
-					SortingMap.Emplace(*AssetData->AssetDescriptions.Find(Order[i]), TArray<FAwesomeAssetData*>{AssetData});
-				}
-			}
-
-			// Get asset arrays in order of sorted values.
-			TArray<float> SortKeys;
-			SortingMap.GetKeys(SortKeys);
-			SortKeys.Sort();
-			TArray<FAwesomeAssetData*> SortedBucket;
-			for(float SortKey : SortKeys)
-			{
-				if(TArray<FAwesomeAssetData*>* ValueArray = SortingMap.Find(SortKey))
-				{
-					SortedBucket.Append(*ValueArray);
-				}
-			}
-			// Reverse the bucket if requested before appending to sorted assets.
-			if(!bSortValueAscending) Algo::Reverse(SortedBucket);
-			Library->SortedAssets.Append(SortedBucket);
-		}
-
-		// Copy to the Id array.
-		Library->SortedAssetIds.Empty();
-		for(FAwesomeAssetData* Item : Library->SortedAssets)
-		{
-			Library->SortedAssetIds.Emplace(Item->UniqueId);
-		}
+		Library->SortedAssets.Append(MoveTemp(SortBuckets[i]));
 	}
 }
 
-void UAwesomeAssetManager::SetBufferType(FName LibraryName, EBufferType BufferType)
+void UAwesomeAssetManager::SetBufferTarget(UItemLibrary* Library, const int32 TargetStart, const int32 TargetEnd, const int32 BufferSize)
 {
-	if(UItemLibrary* Library =  GetAssetLibrary(LibraryName))
+	if (Library)
 	{
-		Library->BufferType = BufferType;
-	}
-}
-
-void UAwesomeAssetManager::SetBufferTarget(FName LibraryName, FName AssetId)
-{
-	if(UItemLibrary* Library =  GetAssetLibrary(LibraryName))
-	{
-		Library->BufferItemTarget = AssetId;
+		Library->BufferSize = BufferSize;
+		Library->TargetStart = TargetStart;
+		Library->TargetEnd = TargetEnd;
 		UpdateBuffer(Library);
 	}
 }
 
-void UAwesomeAssetManager::SetBufferTarget(FName LibraryName, int32 Page)
+void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const int32 AssetIndex, const int32 BufferSize)
 {
-	if(UItemLibrary* Library =  GetAssetLibrary(LibraryName))
+	SetBufferTarget(GetLibrary(LibraryName), AssetIndex, AssetIndex, BufferSize);
+}
+
+void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const FName& UniqueId, const int32 BufferSize)
+{
+	if (UItemLibrary* Library = GetLibrary(LibraryName))
 	{
-		Library->BufferPageTarget = Page;
-		UpdateBuffer(Library);
+		for (int i = 0; i < Library->Items.Num(); ++i)
+		{
+			if (Library->Items[i]->UniqueId == UniqueId)
+			{
+				SetBufferTarget(Library, i, i, BufferSize);
+			}
+		}
 	}
 }
 
-UItemLibrary* UAwesomeAssetManager::GetAssetLibrary(FName LibraryName)
+void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const int32 PageIndex, const int32 PageSize, const int32 NumBufferPages)
 {
-	return *Libraries.Find(LibraryName);
+	if (UItemLibrary* Library = GetLibrary(LibraryName))
+	{
+		const int32 StartIndex = PageIndex * PageSize;
+		const int32 EndIndex = StartIndex + PageSize - 1;
+		
+		const int32 BufferSize = NumBufferPages * PageSize;
+		SetBufferTarget(Library, StartIndex, EndIndex, BufferSize);
+	}
 }
 
 void UAwesomeAssetManager::UpdateBuffer(UItemLibrary* Library)
 {
-	if(Library->BufferType == EBufferType::Page)
-	{
-		TArray<FName> ItemsToUnload = Library->CurrentLoadedIds;
-		// Find items to be loaded. Calculate chunk jsize to load.
-		
-		
-	}
-	else if(Library->BufferType == EBufferType::Range)
-	{
-		
-	}
+	Library->Update();
 }
-
-void UAwesomeAssetManager::CalculateBufferLoadIndexes(UItemLibrary* Library, int32 StartIndex&, int32 EndIndex&)
-{
-	if(Library->BufferType == EBufferType::Page)
-	{
-		StartIndex = (Library->BufferPageTarget * Library->BufferPageSize) - (Library->BufferSize * Library->BufferPageSize);
-		StartIndex = FMath::Clamp(StartIndex, 0, Library->SortedAssetIds.Max());
-		EndIndex = (((Library->BufferPageTarget + 1) * Library->BufferPageSize) - 1) + (Library->BufferSize * Library->BufferPageSize);
-		EndIndex = FMath::Clamp(EndIndex, 0, Library->SortedAssetIds.Max());
-	}
-	else if(Library->BufferType == EBufferType::Range)
-	{
-		int32 TargetItemIndex = Library->SortedAssetIds.Find(Library->BufferItemTarget);
-
-		StartIndex = TargetItemIndex - Library->BufferSize;
-		StartIndex = FMath::Clamp(StartIndex, 0, Library->SortedAssetIds.Max());
-		EndIndex = TargetItemIndex + Library->BufferSize;
-		EndIndex = FMath::Clamp(EndIndex, 0, Library->SortedAssetIds.Max());
-	}
-}
-
