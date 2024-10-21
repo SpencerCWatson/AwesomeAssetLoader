@@ -9,12 +9,14 @@
 #include "UObject/PrimaryAssetId.h"
 #include "AwesomeAssetManager.generated.h"
 
+DECLARE_DYNAMIC_DELEGATE_OneParam(FK2_OnStatusChange, bool, bShouldLoad);
+
 
 /**
  * ~~~~ TODOs ~~~~
  * Handle so that libraries do not persist between level changes.
- * We do not need to add a library with that big struct. Only necessary data.
  * Add profiling
+ * Add a way to supply an ordered list and keep it ordered.
  */
 
 
@@ -28,12 +30,6 @@ class AWESOMEASSETLOADER_API UAwesomeAssetManager : public UGameInstanceSubsyste
 	
 public:
 	
-	/** Construction */
-	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
-	
-	/** Deconstruction */
-	virtual void Deinitialize() override {};
-	
 	/**
 	 * Add a new library of assets to manage.
 	 * If a library with the same name already exists it will be replaced.
@@ -42,7 +38,7 @@ public:
 	 * @return					Was successful.
 	 */
 	UFUNCTION(BlueprintCallable)
-	bool AddAssetLibrary(const FName& LibraryName, TArray<FAwesomeAssetData> Assets);
+	bool AddAssetLibrary(const FName& LibraryName, TSet<FAssetInitializeData> Assets);
 	
 	/**
 	 * Dump an asset library by name.
@@ -69,7 +65,7 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SortAssets(const FName& LibraryName, const TArray<FGameplayTag>& Order, bool bSortValuesDescending = false);
 
-	void SetBufferTarget(UItemLibrary* Library, int32 TargetStart, int32 TargetEnd, const int32 BufferSize);
+	void SetBufferTarget(TSharedPtr<FItemLibrary> Library, int32 TargetStart, int32 TargetEnd, const int32 BufferSize);
 	void SetBufferTarget(const FName& LibraryName, const int32 AssetIndex, const int32 BufferSize);
 	void SetBufferTarget(const FName& LibraryName, const FName& UniqueId, const int32 BufferSize);
 	void SetBufferTarget(const FName& LibraryName, const int32 PageIndex, const int32 PageSize, const int32 NumBufferPages);
@@ -77,16 +73,23 @@ public:
 private:
 	
 	/** Get the library by name */
-	FORCEINLINE UItemLibrary* GetLibrary(const FName& LibraryName)
+	FORCEINLINE TSharedPtr<FItemLibrary> GetLibrary(const FName& LibraryName)
 	{
-		UItemLibrary** LibraryPointer = Libraries.Find(LibraryName);
+		TSharedPtr<FItemLibrary>* LibraryPointer = Libraries.Find(LibraryName);
 		return LibraryPointer ? *LibraryPointer : nullptr;
 	}
 
 	/** Called internally to update the buffer of the library. */
-	void UpdateBuffer(UItemLibrary* Library);
+	void UpdateBuffer(TSharedPtr<FItemLibrary> Library);
 	
 	/** Stores the libraries of assets by name to find easier later */
-	UPROPERTY()
-	TMap<FName, UItemLibrary*> Libraries;
+	TMap<FName, TSharedPtr<FItemLibrary>> Libraries;
+};
+
+struct FAssetLibraryHandle : public TSharedFromThis<FAssetLibraryHandle>
+{
+	FAssetLibraryHandle();
+	~FAssetLibraryHandle();
+
+	TWeakPtr<FItemLibrary> OwningLibrary;
 };

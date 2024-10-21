@@ -4,18 +4,19 @@
 #include "Engine/AssetManager.h"
 
 
-void UItemLibrary::Initialize(TArray<FAwesomeAssetData>&& NewAssets)
+void FItemLibrary::Initialize(TSet<FAssetInitializeData>&& NewAssets)
 {
-	Items.Reset(NewAssets.Num());
+	Items.Reserve(NewAssets.Num());
+
 	for (auto& Asset : NewAssets)
 	{
 		Items.Emplace(MakeShared<FAwesomeAssetData>(MoveTemp(Asset)));
 	}
 }
 
-void UItemLibrary::Update()
+void FItemLibrary::Update()
 {
-	const UAssetManager* AssetManager = UAssetManager::GetIfInitialized();
+	UAssetManager* AssetManager = UAssetManager::GetIfInitialized();
 	check(AssetManager);
 	
 	const auto SetupOrChangeLoad = [](const TSet<TSharedPtr<FAwesomeAssetData>>& Assets, const TAsyncLoadPriority Priority)
@@ -23,7 +24,6 @@ void UItemLibrary::Update()
 		const UAssetManager* AssetManager = UAssetManager::GetIfInitialized();
 		check(AssetManager);
 		
-		TSet<FSoftObjectPath> PathsToLoad;
 		for (const auto& AwesomeAssetData : Assets)
 		{
 			// Skip this asset if it is already loading correctly or stop loading to change priority
@@ -37,18 +37,7 @@ void UItemLibrary::Update()
 				AwesomeAssetData->LoadHandle->ReleaseHandle();
 			}
 
-			PathsToLoad.Reset();
-			
-			for (const auto& SoftObjectPtrToLoad : AwesomeAssetData->AssetsToLoad)
-			{
-				PathsToLoad.Emplace(SoftObjectPtrToLoad.ToSoftObjectPath());
-			}
-			
-			for (const auto& LoadRequest : AwesomeAssetData->PrimaryAssetLoadRequests)
-			{
-				AssetManager->GetPrimaryAssetLoadSet(PathsToLoad, LoadRequest.PrimaryAssetId, LoadRequest.PrimaryAssetBundles, false);
-			}
-
+			// On load delegate
 			FStreamableDelegate OnLoad = FStreamableDelegate::CreateLambda([AwesomeAssetData]()
 				{
 					if (AwesomeAssetData.IsValid())
@@ -58,7 +47,7 @@ void UItemLibrary::Update()
 				});
 
 			// Perform actual load
-			AwesomeAssetData->LoadHandle = AssetManager->GetStreamableManager().RequestAsyncLoad(PathsToLoad.Array(), OnLoad);
+			AwesomeAssetData->LoadHandle = AssetManager->GetStreamableManager().RequestAsyncLoad(AwesomeAssetData->AssetsToLoad.Array(), OnLoad);
 		}
 	};
 
@@ -88,7 +77,7 @@ void UItemLibrary::Update()
 	RequestedAssets = MoveTemp(NewAssetRequest);
 }
 
-void UItemLibrary::GetRequestedAssets(TSet<TSharedPtr<FAwesomeAssetData>>& HighPriority, TSet<TSharedPtr<FAwesomeAssetData>>& DefaultPriority)
+void FItemLibrary::GetRequestedAssets(TSet<TSharedPtr<FAwesomeAssetData>>& HighPriority, TSet<TSharedPtr<FAwesomeAssetData>>& DefaultPriority)
 {
 	// Fill high priority
 	const int32 NumItemsInBufferTargetRange = TargetStart - TargetEnd; 

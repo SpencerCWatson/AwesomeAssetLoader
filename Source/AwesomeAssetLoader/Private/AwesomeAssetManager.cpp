@@ -3,16 +3,13 @@
 
 #include "AwesomeAssetManager.h"
 
-void UAwesomeAssetManager::Initialize(FSubsystemCollectionBase& Collection)
-{
-	Super::Initialize(Collection);
-}
 
-bool UAwesomeAssetManager::AddAssetLibrary(const FName& LibraryName, TArray<FAwesomeAssetData> Assets)
+
+bool UAwesomeAssetManager::AddAssetLibrary(const FName& LibraryName, TSet<FAssetInitializeData> Assets)
 {
 	if (!LibraryName.IsNone() && !Assets.IsEmpty())
 	{
-		UItemLibrary* NewLibrary = NewObject<UItemLibrary>(this);
+		TSharedPtr<FItemLibrary> NewLibrary = MakeShared<FItemLibrary>();
 		NewLibrary->Initialize(MoveTemp(Assets));
 		Libraries.Emplace(LibraryName, NewLibrary);
 		return true;
@@ -22,7 +19,7 @@ bool UAwesomeAssetManager::AddAssetLibrary(const FName& LibraryName, TArray<FAwe
 
 void UAwesomeAssetManager::FilterAssets(const FName& LibraryName, const FGameplayTagContainer& Filter)
 {
-	if (UItemLibrary* Library = GetLibrary(LibraryName))
+	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
 	{
 		Library->FilteredAssets.Reset();
 		for (const auto& Item : Library->Items)
@@ -40,7 +37,7 @@ void UAwesomeAssetManager::FilterAssets(const FName& LibraryName, const FGamepla
 
 void UAwesomeAssetManager::SortAssets(const FName& LibraryName, const TArray<FGameplayTag>& Order, const bool bSortValuesDescending)
 {
-	UItemLibrary* Library = GetLibrary(LibraryName);
+	TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName);
 	
 	if (!Library)
 	{
@@ -89,7 +86,7 @@ void UAwesomeAssetManager::SortAssets(const FName& LibraryName, const TArray<FGa
 	}
 }
 
-void UAwesomeAssetManager::SetBufferTarget(UItemLibrary* Library, const int32 TargetStart, const int32 TargetEnd, const int32 BufferSize)
+void UAwesomeAssetManager::SetBufferTarget(TSharedPtr<FItemLibrary> Library, const int32 TargetStart, const int32 TargetEnd, const int32 BufferSize)
 {
 	if (Library)
 	{
@@ -107,11 +104,11 @@ void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const int32
 
 void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const FName& UniqueId, const int32 BufferSize)
 {
-	if (UItemLibrary* Library = GetLibrary(LibraryName))
+	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
 	{
-		for (int i = 0; i < Library->Items.Num(); ++i)
+		for (int i = 0; i < Library->SortedAssets.Num(); ++i)
 		{
-			if (Library->Items[i]->UniqueId == UniqueId)
+			if (Library->SortedAssets[i]->UniqueId == UniqueId)
 			{
 				SetBufferTarget(Library, i, i, BufferSize);
 			}
@@ -121,7 +118,7 @@ void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const FName
 
 void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const int32 PageIndex, const int32 PageSize, const int32 NumBufferPages)
 {
-	if (UItemLibrary* Library = GetLibrary(LibraryName))
+	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
 	{
 		const int32 StartIndex = PageIndex * PageSize;
 		const int32 EndIndex = StartIndex + PageSize - 1;
@@ -131,7 +128,7 @@ void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const int32
 	}
 }
 
-void UAwesomeAssetManager::UpdateBuffer(UItemLibrary* Library)
+void UAwesomeAssetManager::UpdateBuffer(TSharedPtr<FItemLibrary> Library)
 {
 	Library->Update();
 }

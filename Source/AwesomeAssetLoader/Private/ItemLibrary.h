@@ -28,9 +28,8 @@ struct FAssetLoadRequest
 	}
 };
 
-/** Describes each item to be tracked and have its dependencies loaded. */
-USTRUCT(BlueprintType)
-struct FAwesomeAssetData
+USTRUCT(Blueprintable)
+struct FAssetInitializeData
 {
 	GENERATED_BODY()
 
@@ -40,11 +39,7 @@ struct FAwesomeAssetData
 
 	/** List of assets to load*/
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TArray<TSoftObjectPtr<UObject>> AssetsToLoad;
-	
-	/** List of primary assets to load */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	TArray<FAssetLoadRequest> PrimaryAssetLoadRequests;
+	TSet<FSoftObjectPath> SoftObjectPaths;
 
 	/** Tags that describe this asset for filtering and number values for sorting. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
@@ -53,21 +48,62 @@ struct FAwesomeAssetData
 	/** Delegate handles to call when the load status of this changes */
 	FOnStatusChange OnStatusChange;
 
-	/** Handle to keep the assets alive that this asset depends on */
-	TSharedPtr<FStreamableHandle> LoadHandle;
-
-	
+	FORCEINLINE friend uint32 GetTypeHash(const FAssetInitializeData& Key)
+	{
+		uint32 Hash = 0;
+		Hash = HashCombineFast(GetTypeHash(Key.UniqueId), GetTypeHash(static_cast<uint32>(Key.SoftObjectPaths.Num())));
+		for (const auto& Path : Key.SoftObjectPaths)
+		{
+			Hash = HashCombine(Hash, GetTypeHash(Path));
+		}
+		for (const auto& AssetDescription : Key.AssetDescriptions)
+		{
+			Hash = HashCombine(Hash, GetTypeHash(AssetDescription));
+		}
+		return HashCombine(Hash, GetTypeHash(Key.OnStatusChange.GetHandle()));
+	}
 };
 
-UCLASS()
-class AWESOMEASSETLOADER_API UItemLibrary : public UObject
+/** Describes each item to be tracked and have its dependencies loaded. */
+//USTRUCT(BlueprintType)
+struct FAwesomeAssetData
 {
-	GENERATED_BODY()
+	//GENERATED_BODY()
 
+	FAwesomeAssetData(FAssetInitializeData&& InitData)
+	{
+		UniqueId = InitData.UniqueId;
+		AssetsToLoad = MoveTemp(InitData.SoftObjectPaths);
+		AssetDescriptions = MoveTemp(InitData.AssetDescriptions);
+		OnStatusChange = MoveTemp(InitData.OnStatusChange);
+	}
+
+	/** Unique identifier for this asset. Can leave blank if assets are just referenced by list index. */
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	FName UniqueId;
+
+	/** List of assets to load*/
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TSet<FSoftObjectPath> AssetsToLoad;
+
+	/** Tags that describe this asset for filtering and number values for sorting. */
+	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	TMap<FGameplayTag, float> AssetDescriptions;
+
+	/** Delegate handles to call when the load status of this changes */
+	FOnStatusChange OnStatusChange;
+
+	/** Handle to keep the assets alive that this asset depends on */
+	TSharedPtr<FStreamableHandle> LoadHandle;
+};
+
+
+class FItemLibrary : public TSharedFromThis<FItemLibrary>
+{
 public:
 
 	/** Sets up initial variables */
-	void Initialize(TArray<FAwesomeAssetData>&& NewAssets);
+	void Initialize(TSet<FAssetInitializeData>&& NewAssets);
 
 private:
 
@@ -76,10 +112,10 @@ private:
 	friend class UAwesomeAssetManager;
 
 	/** All items belonging to this library */
-	TArray<TSharedPtr<FAwesomeAssetData>> Items;
+	TSet<TSharedPtr<FAwesomeAssetData>> Items;
 
 	/** Library items that are part of the last set filter */
-	TArray<TSharedPtr<FAwesomeAssetData>> FilteredAssets;
+	TSet<TSharedPtr<FAwesomeAssetData>> FilteredAssets;
 
 	/** The sorted filtered items */
 	TArray<TSharedPtr<FAwesomeAssetData>> SortedAssets;
