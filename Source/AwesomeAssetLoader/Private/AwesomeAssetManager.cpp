@@ -21,7 +21,7 @@ void UAwesomeAssetManager::FilterAssets(const FName& LibraryName, const FGamepla
 {
 	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
 	{
-		Library->FilteredAssets.Reset();
+		Library->FilteredAssets.Empty(Library->Items.Num());
 		for (const auto& Item : Library->Items)
 		{
 			TArray<FGameplayTag> TagsAsArray;
@@ -97,12 +97,12 @@ void UAwesomeAssetManager::SetBufferTarget(TSharedPtr<FItemLibrary> Library, con
 	}
 }
 
-void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const int32 AssetIndex, const int32 BufferSize)
+void UAwesomeAssetManager::SetBufferTargetByIndex(const FName& LibraryName, const int32 AssetIndex, const int32 BufferSize)
 {
 	SetBufferTarget(GetLibrary(LibraryName), AssetIndex, AssetIndex, BufferSize);
 }
 
-void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const FName& UniqueId, const int32 BufferSize)
+void UAwesomeAssetManager::SetBufferTargetByUniqueId(const FName& LibraryName, const FName& UniqueId, const int32 BufferSize)
 {
 	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
 	{
@@ -116,7 +116,7 @@ void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const FName
 	}
 }
 
-void UAwesomeAssetManager::SetBufferTarget(const FName& LibraryName, const int32 PageIndex, const int32 PageSize, const int32 NumBufferPages)
+void UAwesomeAssetManager::SetBufferTargetByPage(const FName& LibraryName, const int32 PageIndex, const int32 PageSize, const int32 NumBufferPages)
 {
 	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
 	{
