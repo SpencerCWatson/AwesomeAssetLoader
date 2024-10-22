@@ -16,10 +16,10 @@ struct FAssetLoadRequest
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Primary Asset Data")
 	FPrimaryAssetId PrimaryAssetId;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Primary Asset Data")
 	TArray<FName> PrimaryAssetBundles;
 
 	FORCEINLINE friend uint32 GetTypeHash(const FAssetLoadRequest& Key)
@@ -34,15 +34,15 @@ struct FAssetInitializeData
 	GENERATED_BODY()
 
 	/** Unique identifier for this asset. Can leave blank if assets are just referenced by list index. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Init Data")
 	FName UniqueId;
 
 	/** List of assets to load*/
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Init Data")
 	TSet<FSoftObjectPath> SoftObjectPaths;
 
 	/** Tags that describe this asset for filtering and number values for sorting. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Init Data")
 	TMap<FGameplayTag, float> AssetDescriptions;
 
 	/** Delegate handles to call when the load status of this changes */
@@ -65,12 +65,12 @@ struct FAssetInitializeData
 };
 
 /** Describes each item to be tracked and have its dependencies loaded. */
-//USTRUCT(BlueprintType)
 struct FAwesomeAssetData
 {
-	//GENERATED_BODY()
-
-	FAwesomeAssetData(FAssetInitializeData&& InitData)
+	FAwesomeAssetData() = delete;
+	FAwesomeAssetData(const FAwesomeAssetData&) = delete;
+	
+	explicit FAwesomeAssetData(FAssetInitializeData&& InitData)
 	{
 		UniqueId = InitData.UniqueId;
 		AssetsToLoad = MoveTemp(InitData.SoftObjectPaths);
@@ -79,15 +79,12 @@ struct FAwesomeAssetData
 	}
 
 	/** Unique identifier for this asset. Can leave blank if assets are just referenced by list index. */
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	FName UniqueId;
 
 	/** List of assets to load*/
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TSet<FSoftObjectPath> AssetsToLoad;
 
 	/** Tags that describe this asset for filtering and number values for sorting. */
-	//UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	TMap<FGameplayTag, float> AssetDescriptions;
 
 	/** Delegate handles to call when the load status of this changes */

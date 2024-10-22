@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include "Subsystems/GameInstanceSubsystem.h"
 #include "CoreMinimal.h"
 #include "UObject/Object.h"
 #include "ItemLibrary.h"
@@ -37,14 +38,14 @@ public:
 	 * @param Assets			Assets to be tracked by the newly created library.
 	 * @return					Was successful.
 	 */
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category="AwesomeAssetLoader")
 	bool AddAssetLibrary(const FName& LibraryName, TSet<FAssetInitializeData> Assets);
 	
 	/**
 	 * Dump an asset library by name.
 	 * @param LibraryName		The library that should be dumped.
 	 */
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category="AwesomeAssetLoader")
 	void RemoveAssetLibrary(const FName& LibraryName) { Libraries.Remove(LibraryName); }
 
 	/**
@@ -52,7 +53,7 @@ public:
 	 * @param LibraryName		Name of the library to apply the filter to.
 	 * @param Filter			Container of tags to filter down the full asset list by.
 	 */
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category="AwesomeAssetLoader")
 	void FilterAssets(const FName& LibraryName, const FGameplayTagContainer& Filter);
 
 	/**
@@ -62,7 +63,7 @@ public:
 	 * @param Order					Array of tags that define the sort order.
 	 * @param bSortValuesDescending	False to sort items by tag value in descending order within each tag group.
 	 */
-	UFUNCTION(BlueprintCallable)
+	UFUNCTION(BlueprintCallable, Category="AwesomeAssetLoader")
 	void SortAssets(const FName& LibraryName, const TArray<FGameplayTag>& Order, bool bSortValuesDescending = false);
 
 	void SetBufferTarget(TSharedPtr<FItemLibrary> Library, int32 TargetStart, int32 TargetEnd, const int32 BufferSize);
@@ -84,12 +85,4 @@ private:
 	
 	/** Stores the libraries of assets by name to find easier later */
 	TMap<FName, TSharedPtr<FItemLibrary>> Libraries;
-};
-
-struct FAssetLibraryHandle : public TSharedFromThis<FAssetLibraryHandle>
-{
-	FAssetLibraryHandle();
-	~FAssetLibraryHandle();
-
-	TWeakPtr<FItemLibrary> OwningLibrary;
 };

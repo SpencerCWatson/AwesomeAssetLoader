@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AwesomeAssetManager.h"
+#include "ItemLibrary.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "AAMBlueprintHelpers.generated.h"
 
@@ -16,6 +17,6 @@ class AWESOMEASSETLOADER_API UAAMBlueprintHelpers : public UBlueprintFunctionLib
 {
 	GENERATED_BODY()
 
-	UFUNCTION(BlueprintCallable)
-	static void BindDelegate(const FAssetInitializeData& InitializeData, const FK2_OnStatusChange& OnStatusChange);
+	UFUNCTION(BlueprintCallable, Category="AwesomeAssetLoader")
+	static void BindDelegate(UPARAM(ref) FAssetInitializeData& InitializeData, FK2_OnStatusChange OnStatusChange);
 };
