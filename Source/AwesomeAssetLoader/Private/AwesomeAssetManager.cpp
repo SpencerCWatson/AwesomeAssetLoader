@@ -3,87 +3,71 @@
 
 #include "AwesomeAssetManager.h"
 
+DEFINE_LOG_CATEGORY(FLogAwesomeAssetManager);
 
-
-bool UAwesomeAssetManager::AddAssetLibrary(const FName& LibraryName, TSet<FAssetInitializeData> Assets)
+bool UAwesomeAssetManager::AddAssetLibrary(FName LibraryName, TSet<FAssetInitializeData> Assets)
 {
 	if (!LibraryName.IsNone() && !Assets.IsEmpty())
 	{
 		TSharedPtr<FItemLibrary> NewLibrary = MakeShared<FItemLibrary>();
-		NewLibrary->Initialize(MoveTemp(Assets));
+		NewLibrary->Initialize(LibraryName, MoveTemp(Assets));
 		Libraries.Emplace(LibraryName, NewLibrary);
 		return true;
 	}
+
+	UE_LOG(FLogAwesomeAssetManager, Warning, TEXT("Failed to add a new asset library"))
 	return false;
 }
 
-void UAwesomeAssetManager::FilterAssets(const FName& LibraryName, const FGameplayTagContainer& Filter)
-{
-	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
-	{
-		Library->FilteredAssets.Empty(Library->Items.Num());
-		for (const auto& Item : Library->Items)
-		{
-			TArray<FGameplayTag> TagsAsArray;
-			Item->AssetDescriptions.GetKeys(TagsAsArray);
-			const FGameplayTagContainer ItemTagContainer = FGameplayTagContainer::CreateFromArray(TagsAsArray);
-			if (ItemTagContainer.HasAll(Filter))
-			{
-				Library->FilteredAssets.Emplace(Item);
-			}
-		}
-	}
-}
-
-void UAwesomeAssetManager::SortAssets(const FName& LibraryName, const TArray<FGameplayTag>& Order, const bool bSortValuesDescending)
+void UAwesomeAssetManager::FilterAndSortAssets(
+	FName LibraryName,
+	const FGameplayTagContainer& MustHaveTags,
+	const FGameplayTagContainer& MustNotHaveTags,
+	const TArray<FGameplayTag>& SortOrder,
+	FSimpleDelegate OnComplete,
+	bool bSortValuesDescending,
+	bool bAllowAsynchronous)
 {
 	TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName);
-	
 	if (!Library)
 	{
+		UE_LOG(FLogAwesomeAssetManager, Warning, TEXT("Failed to find asset library to sort with name: %s"), *LibraryName.ToString());
 		return;
 	}
 	
-	// Organize and sort the asset data by each tag before combining. 
-	Library->SortedAssets.Reset(Library->FilteredAssets.Num());
-	TArray<TArray<TSharedPtr<FAwesomeAssetData>>> SortBuckets;
-	SortBuckets.Init(TArray<TSharedPtr<FAwesomeAssetData>>(), Order.Num());
-	
-	for (const auto& Item : Library->Items)
+	if (bAllowAsynchronous)
 	{
-		for (int32 i = 0; i < Order.Num(); ++i)
+		// Asynchronous
+		const int32 TaskNumber = Library->TaskCounter.fetch_add(1);
+		Library->SortAndFilterTask = UE::Tasks::Launch(UE_SOURCE_LOCATION, [TaskNumber, Library, MustHaveTags, MustNotHaveTags, SortOrder, bSortValuesDescending, OnComplete]()
 		{
-			// If current asset contains current tag.
-			if (Item->AssetDescriptions.Contains(Order[i]))
+			if (Library && TaskNumber == Library->TaskCounter.load() - 1)
 			{
-				SortBuckets[i].Emplace(Item);
-				break;
+				// todo store the values and recheck the task counter before setting.
+				FScopeLock Lock(&Library->Lock);
+				UAwesomeAssetManager::FilterAndSortAssetsInternal(Library, MustHaveTags, MustNotHaveTags, SortOrder, bSortValuesDescending);
+				FFunctionGraphTask::CreateAndDispatchWhenReady([OnComplete]()
+				{
+					OnComplete.ExecuteIfBound();
+				}, TStatId{}, nullptr, ENamedThreads::GameThread);
 			}
-		}
+		});
 	}
-	
-	// Sort by values in buckets.
-	for (int32 i = 0; i < SortBuckets.Num(); ++i)
+	else
 	{
-		const FGameplayTag SortTag = Order[i];
-
-		if (bSortValuesDescending)
-		{
-			SortBuckets[i].Sort([SortTag](const TSharedPtr<FAwesomeAssetData>& A, const TSharedPtr<FAwesomeAssetData>& B)
-			{
-				return A->AssetDescriptions.FindChecked(SortTag) > B->AssetDescriptions.FindChecked(SortTag);
-			});
-		}
-		else
-		{
-			SortBuckets[i].Sort([SortTag](const TSharedPtr<FAwesomeAssetData>& A, const TSharedPtr<FAwesomeAssetData>& B)
-			{
-				return A->AssetDescriptions.FindChecked(SortTag) < B->AssetDescriptions.FindChecked(SortTag);
-			});
-		}
-		
-		Library->SortedAssets.Append(MoveTemp(SortBuckets[i]));
+		// Synchronous
+		FScopeLock Lock(&Library->Lock); // Blocking
+		++Library->TaskCounter;
+		UAwesomeAssetManager::FilterAndSortAssetsInternal(Library, MustHaveTags, MustNotHaveTags, SortOrder, bSortValuesDescending);
+		OnComplete.ExecuteIfBound();
 	}
+}
+
+void UAwesomeAssetManager::K2_FilterAndSortAssets(FName LibraryName, const FGameplayTagContainer& MustHaveTags,
+	const FGameplayTagContainer& MustNotHaveTags, const TArray<FGameplayTag>& SortOrder,
+	FOnFilteredAndSorted OnComplete, bool bSortValuesDescending, bool bAllowAsynchronous)
+{
+	FilterAndSortAssets(LibraryName, MustHaveTags, MustNotHaveTags, SortOrder, FSimpleDelegate::CreateUFunction(OnComplete.GetUObject(), OnComplete.GetFunctionName()), bSortValuesDescending,bAllowAsynchronous);
 }
 
 void UAwesomeAssetManager::SetBufferTarget(TSharedPtr<FItemLibrary> Library, const int32 TargetStart, const int32 TargetEnd, const int32 BufferSize)
@@ -97,12 +81,12 @@ void UAwesomeAssetManager::SetBufferTarget(TSharedPtr<FItemLibrary> Library, con
 	}
 }
 
-void UAwesomeAssetManager::SetBufferTargetByIndex(const FName& LibraryName, const int32 AssetIndex, const int32 BufferSize)
+void UAwesomeAssetManager::SetBufferTargetByIndex(FName LibraryName, const int32 AssetIndex, const int32 BufferSize)
 {
 	SetBufferTarget(GetLibrary(LibraryName), AssetIndex, AssetIndex, BufferSize);
 }
 
-void UAwesomeAssetManager::SetBufferTargetByUniqueId(const FName& LibraryName, const FName& UniqueId, const int32 BufferSize)
+void UAwesomeAssetManager::SetBufferTargetByUniqueId(FName LibraryName, FName UniqueId, const int32 BufferSize)
 {
 	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
 	{
@@ -116,7 +100,7 @@ void UAwesomeAssetManager::SetBufferTargetByUniqueId(const FName& LibraryName, c
 	}
 }
 
-void UAwesomeAssetManager::SetBufferTargetByPage(const FName& LibraryName, const int32 PageIndex, const int32 PageSize, const int32 NumBufferPages)
+void UAwesomeAssetManager::SetBufferTargetByPage(FName LibraryName, const int32 PageIndex, const int32 PageSize, const int32 NumBufferPages)
 {
 	if (TSharedPtr<FItemLibrary> Library = GetLibrary(LibraryName))
 	{
@@ -125,6 +109,74 @@ void UAwesomeAssetManager::SetBufferTargetByPage(const FName& LibraryName, const
 		
 		const int32 BufferSize = NumBufferPages * PageSize;
 		SetBufferTarget(Library, StartIndex, EndIndex, BufferSize);
+	}
+}
+
+void UAwesomeAssetManager::FilterAndSortAssetsInternal(TSharedPtr<FItemLibrary> Library,
+	const FGameplayTagContainer& MustHaveTags, const FGameplayTagContainer& MustNotHaveTags,
+	const TArray<FGameplayTag>& SortOrder, bool bSortValuesDescending)
+{
+	FScopeLock Lock(&Library->Lock);
+	// Filter
+	if (MustHaveTags != Library->MushHaveTagsCache || MustNotHaveTags != Library->MushNotHaveTagsCache)
+	{
+		TSet<TSharedPtr<FAwesomeAssetData>> FilteredAssets;
+		FilteredAssets.Reserve(Library->Items.Num());
+		
+		Library->MushHaveTagsCache = MustHaveTags;
+		Library->MushNotHaveTagsCache = MustNotHaveTags;
+		for (const auto& Item : Library->Items)
+		{
+			// This might be a good place for a gameplay tag query 
+			if (Item->CachedAssetDescriptionTags.HasAll(MustHaveTags) && !Item->CachedAssetDescriptionTags.HasAny(MustNotHaveTags))
+			{
+				FilteredAssets.Emplace(Item);
+			}
+		}
+		Library->FilteredAssets = MoveTemp(FilteredAssets);
+		UE_LOG(FLogAwesomeAssetManager, Verbose, TEXT("Library %s has %i items after being filtered"), *Library->Name.ToString(), Library->FilteredAssets.Num())
+	}
+
+	// Sort
+	// todo get rid of moving the data and just sort it from the beginning.
+	Library->SortedAssets.Reset(Library->FilteredAssets.Num()); 
+	TArray<TArray<TSharedPtr<FAwesomeAssetData>>> SortBuckets;
+	SortBuckets.Init(TArray<TSharedPtr<FAwesomeAssetData>>(), SortOrder.Num());
+	
+	for (const auto& Item : Library->FilteredAssets)
+	{
+		for (int32 i = 0; i < SortOrder.Num(); ++i)
+		{
+			// If current asset contains current tag.
+			if (Item->AssetDescriptions.Contains(SortOrder[i]))
+			{
+				SortBuckets[i].Emplace(Item);
+				break;
+			}
+		}
+	}
+	
+	// Sort by values in buckets.
+	for (int32 i = 0; i < SortBuckets.Num(); ++i)
+	{
+		const FGameplayTag ThisBucketsTag = SortOrder[i];
+
+		if (bSortValuesDescending)
+		{
+			SortBuckets[i].Sort([ThisBucketsTag](const TSharedPtr<FAwesomeAssetData>& A, const TSharedPtr<FAwesomeAssetData>& B)
+			{
+				return A->AssetDescriptions.FindChecked(ThisBucketsTag) > B->AssetDescriptions.FindChecked(ThisBucketsTag);
+			});
+		}
+		else
+		{
+			SortBuckets[i].Sort([ThisBucketsTag](const TSharedPtr<FAwesomeAssetData>& A, const TSharedPtr<FAwesomeAssetData>& B)
+			{
+				return A->AssetDescriptions.FindChecked(ThisBucketsTag) < B->AssetDescriptions.FindChecked(ThisBucketsTag);
+			});
+		}
+		
+		Library->SortedAssets.Append(MoveTemp(SortBuckets[i]));
 	}
 }
 

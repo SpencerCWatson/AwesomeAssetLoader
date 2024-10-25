@@ -4,8 +4,9 @@
 #include "Engine/AssetManager.h"
 
 
-void FItemLibrary::Initialize(TSet<FAssetInitializeData>&& NewAssets)
+void FItemLibrary::Initialize(FName LibraryName, TSet<FAssetInitializeData>&& NewAssets)
 {
+	Name = LibraryName;
 	Items.Reserve(NewAssets.Num());
 
 	for (auto& Asset : NewAssets)
@@ -100,7 +101,7 @@ void FItemLibrary::GetRequestedAssets(TSet<TSharedPtr<FAwesomeAssetData>>& HighP
 	{
 		if (SortedAssets.IsValidIndex(i))
 		{
-			HighPriority.Emplace(SortedAssets[i]);
+			DefaultPriority.Emplace(SortedAssets[i]);
 		}
 	}
 
@@ -109,7 +110,7 @@ void FItemLibrary::GetRequestedAssets(TSet<TSharedPtr<FAwesomeAssetData>>& HighP
 	{
 		if (SortedAssets.IsValidIndex(i))
 		{
-			HighPriority.Emplace(SortedAssets[i]);
+			DefaultPriority.Emplace(SortedAssets[i]);
 		}
 	}
 }

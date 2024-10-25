@@ -75,6 +75,9 @@ struct FAwesomeAssetData
 		UniqueId = InitData.UniqueId;
 		AssetsToLoad = MoveTemp(InitData.SoftObjectPaths);
 		AssetDescriptions = MoveTemp(InitData.AssetDescriptions);
+		TArray<FGameplayTag> Keys;
+		AssetDescriptions.GenerateKeyArray(Keys);
+		CachedAssetDescriptionTags = FGameplayTagContainer::CreateFromArray(Keys);
 		OnStatusChange = MoveTemp(InitData.OnStatusChange);
 	}
 
@@ -86,6 +89,9 @@ struct FAwesomeAssetData
 
 	/** Tags that describe this asset for filtering and number values for sorting. */
 	TMap<FGameplayTag, float> AssetDescriptions;
+
+	/** Cached tags for faster filtering */
+	FGameplayTagContainer CachedAssetDescriptionTags;
 
 	/** Delegate handles to call when the load status of this changes */
 	FOnStatusChange OnStatusChange;
@@ -100,22 +106,38 @@ class FItemLibrary : public TSharedFromThis<FItemLibrary>
 public:
 
 	/** Sets up initial variables */
-	void Initialize(TSet<FAssetInitializeData>&& NewAssets);
+	void Initialize(FName LibraryName, TSet<FAssetInitializeData>&& NewAssets);
 
 private:
+	FName Name;
 
 	void Update();
 	
 	friend class UAwesomeAssetManager;
 
+	std::atomic<int32> TaskCounter;
+
+	UE::Tasks::FTask SortAndFilterTask;
+	
+	
+
+	//~ Start lockables
+	FCriticalSection Lock;
+	
 	/** All items belonging to this library */
 	TSet<TSharedPtr<FAwesomeAssetData>> Items;
 
+	FGameplayTagContainer MushHaveTagsCache;
+	FGameplayTagContainer MushNotHaveTagsCache;
+	
 	/** Library items that are part of the last set filter */
 	TSet<TSharedPtr<FAwesomeAssetData>> FilteredAssets;
 
 	/** The sorted filtered items */
 	TArray<TSharedPtr<FAwesomeAssetData>> SortedAssets;
+
+	//~ End lockables
+	
 
 	
 	//~~~~ For the buffer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
