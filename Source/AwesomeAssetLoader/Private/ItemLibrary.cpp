@@ -20,37 +20,38 @@ void FItemLibrary::Update()
 	UAssetManager* AssetManager = UAssetManager::GetIfInitialized();
 	check(AssetManager);
 	
-	const auto SetupOrChangeLoad = [](const TSet<TSharedPtr<FAwesomeAssetData>>& Assets, const TAsyncLoadPriority Priority)
-	{
-		const UAssetManager* AssetManager = UAssetManager::GetIfInitialized();
-		check(AssetManager);
-		
-		for (const auto& AwesomeAssetData : Assets)
+	const auto SetupOrChangeLoad =
+		[](const TSet<TSharedPtr<FAwesomeAssetData>>& Assets, const TAsyncLoadPriority Priority)
 		{
-			// Skip this asset if it is already loading correctly or stop loading to change priority
-			if (AwesomeAssetData->LoadHandle.IsValid())
+			const UAssetManager* AssetManager = UAssetManager::GetIfInitialized();
+			check(AssetManager);
+			
+			for (const auto& AwesomeAssetData : Assets)
 			{
-				// Keep handle because it is either loading with the right priority or it is loaded
-				if (AwesomeAssetData->LoadHandle->HasLoadCompleted() || AwesomeAssetData->LoadHandle->GetPriority() == Priority)
+				// Skip this asset if it is already loading correctly or stop loading to change priority
+				if (AwesomeAssetData->LoadHandle.IsValid())
 				{
-					continue;
-				}
-				AwesomeAssetData->LoadHandle->ReleaseHandle();
-			}
-
-			// On load delegate
-			FStreamableDelegate OnLoad = FStreamableDelegate::CreateLambda([AwesomeAssetData]()
-				{
-					if (AwesomeAssetData.IsValid())
+					// Keep handle because it is either loading with the right priority or it is loaded
+					if (AwesomeAssetData->LoadHandle->HasLoadCompleted() || AwesomeAssetData->LoadHandle->GetPriority() == Priority)
 					{
-						AwesomeAssetData->OnStatusChange.ExecuteIfBound(true);
+						continue;
 					}
-				});
+					AwesomeAssetData->LoadHandle->ReleaseHandle();
+				}
 
-			// Perform actual load
-			AwesomeAssetData->LoadHandle = AssetManager->GetStreamableManager().RequestAsyncLoad(AwesomeAssetData->AssetsToLoad.Array(), OnLoad);
-		}
-	};
+				// On load delegate
+				FStreamableDelegate OnLoad = FStreamableDelegate::CreateLambda([AwesomeAssetData]()
+					{
+						if (AwesomeAssetData.IsValid())
+						{
+							AwesomeAssetData->OnStatusChange.ExecuteIfBound(true);
+						}
+					});
+
+				// Perform actual load
+				AwesomeAssetData->LoadHandle = AssetManager->GetStreamableManager().RequestAsyncLoad(AwesomeAssetData->AssetsToLoad.Array(), OnLoad);
+			}
+		};
 
 	// Get requested assets
 	TSet<TSharedPtr<FAwesomeAssetData>> HighPriority;
@@ -67,7 +68,7 @@ void FItemLibrary::Update()
 	NewAssetRequest.Append(MoveTemp(DefaultPriority));
 	
 
-	// Unload
+	// Unload items out of range
 	const TSet<TSharedPtr<FAwesomeAssetData>> ToUnload = RequestedAssets.Difference(NewAssetRequest);
 	for (const auto& AssetToUnload : ToUnload)
 	{
@@ -80,8 +81,14 @@ void FItemLibrary::Update()
 
 void FItemLibrary::GetRequestedAssets(TSet<TSharedPtr<FAwesomeAssetData>>& HighPriority, TSet<TSharedPtr<FAwesomeAssetData>>& DefaultPriority)
 {
+	// Block if there is still a sorting task happening. Right now we need to access the SortedAssets
+	verify(SortAndFilterTask.Wait());
+	FScopeLock ScopeLock(&Lock);
+	
+	//todo add range validation so there is no need for an IsValidIndex() check.
+	
 	// Fill high priority
-	const int32 NumItemsInBufferTargetRange = TargetStart - TargetEnd; 
+	const int32 NumItemsInBufferTargetRange = FMath::Clamp(TargetEnd - TargetStart, 0, MAX_int32); 
 	HighPriority.Empty(NumItemsInBufferTargetRange);
 	
 	for (int i = TargetStart; i <= TargetEnd; ++i)
@@ -92,8 +99,8 @@ void FItemLibrary::GetRequestedAssets(TSet<TSharedPtr<FAwesomeAssetData>>& HighP
 		}
 	}
 
-	// Fill default priority
-	const int32 FullRangeCount = NumItemsInBufferTargetRange + BufferSize * 2;
+	// Fill buffer
+	const int32 FullRangeCount = BufferSize * 2;
 	DefaultPriority.Empty(FullRangeCount);
 	
 	// Front buffer

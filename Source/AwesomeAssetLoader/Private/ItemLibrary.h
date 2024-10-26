@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Tasks/Task.h"
 #include "UObject/Object.h"
 #include "GameplayTagContainer.h"
 #include "Engine/StreamableManager.h"
@@ -118,8 +119,7 @@ private:
 	std::atomic<int32> TaskCounter;
 
 	UE::Tasks::FTask SortAndFilterTask;
-	
-	
+
 
 	//~ Start lockables
 	FCriticalSection Lock;
@@ -127,8 +127,8 @@ private:
 	/** All items belonging to this library */
 	TSet<TSharedPtr<FAwesomeAssetData>> Items;
 
-	FGameplayTagContainer MushHaveTagsCache;
-	FGameplayTagContainer MushNotHaveTagsCache;
+	FGameplayTagContainer MustHaveTagsCache;
+	FGameplayTagContainer MustNotHaveTagsCache;
 	
 	/** Library items that are part of the last set filter */
 	TSet<TSharedPtr<FAwesomeAssetData>> FilteredAssets;
